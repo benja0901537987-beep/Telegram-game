@@ -1,4 +1,6 @@
 // ===== KEY ROTATION =====
+// keys.js — Optimized key management with separate pools
+
 function loadKeys(prefix) {
   const keys = [];
   let i = 1;
@@ -11,8 +13,9 @@ function loadKeys(prefix) {
 
 const DEEPSEEK_KEYS = loadKeys('DEEPSEEK_KEY');
 const GROQ_KEYS = loadKeys('GROQ_KEY');
-let deepseekResponseIndex = 0; // for keys 1-25 (response)
-let deepseekLearningIndex = 0; // for keys 26-50 (learning)
+
+let deepseekResponseIndex = 0; // for keys 1-25 (response — الأولويات)
+let deepseekLearningIndex = 0; // for keys 26-50 (learning — background processing)
 let groqIndex = 0;
 
 function slicePool(arr, start, end) {
@@ -22,8 +25,10 @@ function slicePool(arr, start, end) {
 const DEEPSEEK_RESPONSE_KEYS = slicePool(DEEPSEEK_KEYS, 0, 25);
 const DEEPSEEK_LEARNING_KEYS = slicePool(DEEPSEEK_KEYS, 25, 50);
 
+// ============================================================
+// 🎯 RESPONSE KEYS (1-25) — User-facing responses (priority)
+// ============================================================
 export function getResponseDeepSeekKey() {
-  // prefer response pool, fallback to overall keys
   if (DEEPSEEK_RESPONSE_KEYS.length > 0) {
     const key = DEEPSEEK_RESPONSE_KEYS[deepseekResponseIndex % DEEPSEEK_RESPONSE_KEYS.length];
     deepseekResponseIndex = (deepseekResponseIndex + 1) % DEEPSEEK_RESPONSE_KEYS.length;
@@ -37,8 +42,18 @@ export function getResponseDeepSeekKey() {
   throw new Error('No DeepSeek API keys found for response');
 }
 
+export function rotateResponseDeepSeekKey() {
+  if (DEEPSEEK_RESPONSE_KEYS.length === 0 && DEEPSEEK_KEYS.length === 0) {
+    throw new Error('No DeepSeek API keys found');
+  }
+  deepseekResponseIndex = (deepseekResponseIndex + 1) % (DEEPSEEK_RESPONSE_KEYS.length || DEEPSEEK_KEYS.length);
+  return (DEEPSEEK_RESPONSE_KEYS[deepseekResponseIndex] || DEEPSEEK_KEYS[deepseekResponseIndex]);
+}
+
+// ============================================================
+// 🧠 LEARNING KEYS (26-50) — Background learning (non-blocking)
+// ============================================================
 export function getLearningDeepSeekKey() {
-  // prefer learning pool, fallback to overall keys
   if (DEEPSEEK_LEARNING_KEYS.length > 0) {
     const key = DEEPSEEK_LEARNING_KEYS[deepseekLearningIndex % DEEPSEEK_LEARNING_KEYS.length];
     deepseekLearningIndex = (deepseekLearningIndex + 1) % DEEPSEEK_LEARNING_KEYS.length;
@@ -52,25 +67,29 @@ export function getLearningDeepSeekKey() {
   throw new Error('No DeepSeek API keys found for learning');
 }
 
+export function rotateLearningDeepSeekKey() {
+  if (DEEPSEEK_LEARNING_KEYS.length === 0 && DEEPSEEK_KEYS.length === 0) {
+    throw new Error('No DeepSeek API keys found');
+  }
+  deepseekLearningIndex = (deepseekLearningIndex + 1) % (DEEPSEEK_LEARNING_KEYS.length || DEEPSEEK_KEYS.length);
+  return (DEEPSEEK_LEARNING_KEYS[deepseekLearningIndex] || DEEPSEEK_KEYS[deepseekLearningIndex]);
+}
+
+// ============================================================
+// ⚡ GROQ KEYS — All requests (usually has quota)
+// ============================================================
 export function getNextGroqKey() {
-  if (GROQ_KEYS.length === 0) throw new Error('No Groq API keys found in .env');
+  if (GROQ_KEYS.length === 0) {
+    throw new Error('No Groq API keys found in .env');
+  }
   const key = GROQ_KEYS[groqIndex];
   groqIndex = (groqIndex + 1) % GROQ_KEYS.length;
   return key;
 }
 
-export function rotateResponseDeepSeekKey() {
-  if (DEEPSEEK_RESPONSE_KEYS.length === 0 && DEEPSEEK_KEYS.length === 0) throw new Error('No DeepSeek API keys found in .env');
-  deepseekResponseIndex = (deepseekResponseIndex + 1) % (DEEPSEEK_RESPONSE_KEYS.length || DEEPSEEK_KEYS.length);
-  return (DEEPSEEK_RESPONSE_KEYS[deepseekResponseIndex] || DEEPSEEK_KEYS[deepseekResponseIndex]);
-}
-
-export function rotateLearningDeepSeekKey() {
-  if (DEEPSEEK_LEARNING_KEYS.length === 0 && DEEPSEEK_KEYS.length === 0) throw new Error('No DeepSeek API keys found in .env');
-  deepseekLearningIndex = (deepseekLearningIndex + 1) % (DEEPSEEK_LEARNING_KEYS.length || DEEPSEEK_KEYS.length);
-  return (DEEPSEEK_LEARNING_KEYS[deepseekLearningIndex] || DEEPSEEK_KEYS[deepseekLearningIndex]);
-}
-
+// ============================================================
+// 📊 STATS & MONITORING
+// ============================================================
 export function getKeyStats() {
   return {
     deepseek: {
@@ -79,7 +98,23 @@ export function getKeyStats() {
       learningPool: DEEPSEEK_LEARNING_KEYS.length,
       responseIndex: deepseekResponseIndex,
       learningIndex: deepseekLearningIndex,
+      responseKeysRemaining: DEEPSEEK_RESPONSE_KEYS.length - (deepseekResponseIndex % (DEEPSEEK_RESPONSE_KEYS.length || 1)),
+      learningKeysRemaining: DEEPSEEK_LEARNING_KEYS.length - (deepseekLearningIndex % (DEEPSEEK_LEARNING_KEYS.length || 1)),
     },
-    groq: { total: GROQ_KEYS.length, currentIndex: groqIndex },
+    groq: {
+      total: GROQ_KEYS.length,
+      currentIndex: groqIndex,
+      keysRemaining: GROQ_KEYS.length - (groqIndex % (GROQ_KEYS.length || 1)),
+    },
   };
+}
+
+// ============================================================
+// 🔄 RESET FOR TESTING (optional)
+// ============================================================
+export function resetKeyIndices() {
+  deepseekResponseIndex = 0;
+  deepseekLearningIndex = 0;
+  groqIndex = 0;
+  console.log('[Keys] Indices reset');
 }
